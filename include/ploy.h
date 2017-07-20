@@ -286,7 +286,7 @@ struct ploy_Cell {
 };
 
 /* Ploy cells are at least at aligned as a float, and at most as aligned as a pointer. */
-static size_t const PLOY_CELL_ALIGNMENT = max(sizeof(float), sizeof(void*));
+static size_t const PLOY_CELL_ALIGNMENT = sizeof(float) > sizeof(void*) ? sizeof(float) : sizeof(void*);
 
 ploy_Cell* ploy_Cell_new(
 	ploy_Heap* const heap

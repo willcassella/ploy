@@ -14,11 +14,11 @@ int main()
 	if (error)
 	{
 		printf("An error occured while compiling: %d", error);
-		scanf("");
+		getchar();
 		return error;
 	}
 
 	ploy_Value result;
 	ploy_begin(&heap, code.list, &result);
-	scanf("");
+	getchar();
 }
