@@ -172,7 +172,7 @@ PLOY_FUNC ploy_Value ploy_Value_new(
 );
 
 PLOY_FUNC ploy_ErrorStatus ploy_Value_resolve(
-	ploy_Context* ctx,
+	ploy_Context ctx,
 	ploy_Value value,
 	ploy_Value* out_result
 );
