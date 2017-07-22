@@ -1265,7 +1265,7 @@ static ploy_ErrorStatus ploy_next_token(
 		{
 			*out_token_len = 0;
 			*out_token_type = PLOY_TOKEN_NONE;
-			ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "EOF reached before closing parenthesis");
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "EOF reached before closing quotation mark");
 			return PLOY_ERROR;
 		}
 
