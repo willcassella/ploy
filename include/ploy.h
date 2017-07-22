@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 #ifdef __cplusplus
 #   define PLOY_FUNC extern "C"
@@ -15,34 +16,49 @@
 
 #define PLOY_UNUSED(x) (void)(x)
 
-/*
- *
- * Common typedefs
- *
- */
-
-typedef int32_t ploy_Error;
+typedef int32_t ploy_ErrorCode;
+typedef enum ploy_ErrorStatus ploy_ErrorStatus;
 typedef struct ploy_Value ploy_Value;
 typedef enum ploy_ValueType ploy_ValueType;
 typedef struct ploy_Cell ploy_Cell;
 typedef struct ploy_Function ploy_Function;
 typedef struct ploy_Heap ploy_Heap;
+typedef enum ploy_BuiltinFunc ploy_BuiltinFunc;
+typedef struct ploy_Context ploy_Context;
+typedef struct ploy_CallStack ploy_CallStack;
+typedef struct ploy_ErrorHandler ploy_ErrorHandler;
+typedef size_t ploy_Context_Bookmark;
 
-typedef ploy_Error(*ploy_Function_Invoke_fn)(
+typedef ploy_ErrorStatus(*ploy_Function_Invoke_fn)(
     void* user_data,
-	ploy_Heap* heap,
-    ploy_Cell const* arg_list,
-	ploy_Value* out_value
+    ploy_Context ctx,
+	ploy_Cell const* arg_list,
+	ploy_Value* out_result
 );
 
-#define PLOY_ERROR_NONE 0
-#define PLOY_ERROR_UNKNOWN 1
-#define PLOY_ERROR_OUT_OF_MEMORY 2
-#define PLOY_ERROR_INVALID_SYNTAX 3
-#define PLOY_ERROR_INVALID_TYPE 4
-#define PLOY_ERROR_UNDEFINED_SYMBOL 5
-#define PLOY_ERROR_TOO_MANY_ARGUMENTS 6
-#define PLOY_ERROR_TOO_FEW_ARGUMENTS 7
+typedef void(*ploy_ErrorHandler_Handle_fn)(
+	void* user_data,
+	ploy_Context ctx,
+	ploy_ErrorCode error_code,
+	char const* error_str_fmt,
+	va_list fmt_args
+);
+
+enum ploy_ErrorStatus {
+	PLOY_OK = 0,
+	PLOY_ERROR = 1,
+};
+
+enum ploy_CoreErrorCode {
+	PLOY_ERROR_CORE_OUT_OF_MEMORY = 1,
+	PLOY_ERROR_CORE_UNEXPECTED_NULL,
+	PLOY_ERROR_CORE_UNEXPECTED_TYPE,
+	PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS,
+	PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS,
+	PLOY_ERROR_CORE_UNEXPECTED_TOKEN,
+	PLOY_ERROR_CORE_INVALID_SYNTAX,
+	PLOY_ERROR_FIRST_USER_CODE,
+};
 
 enum ploy_ValueType {
     PLOY_VALUE_LIST, // The given value is a list, the address of the first element is stored in the 'list' member.
@@ -53,47 +69,84 @@ enum ploy_ValueType {
     PLOY_VALUE_STR, // The given value is a string, the address of which is stored in the 'str' member.
     PLOY_VALUE_SYMBOL, // The given value is a symbol which requires lookup, the name of the symbol is stored in the 'str' member.
 	PLOY_VALUE_QSYMBOL, // The given value is a quoted symbol, indicating the symbol should not be looked up. The name of the symbol is stored in the 'str' member.
-	PLOY_VALUE_SYNTAX, // The given value is a syntax object, the index of which is stored in the 'i32' member.
 	PLOY_VALUE_FUNCTION_USER, // The given value is a user-defined function the address of which is stored in the 'function' member.
 	PLOY_VALUE_FUNCTION_BUILTIN, // The given value is a builtin function, the index of which is stored in the 'i32' member.
 };
 
-/* Syntax objects. */
-#define PLOY_SYNTAX_BEGIN 1
-#define PLOY_SYNTAX_IF 2
-#define PLOY_SYNTAX_COND 3
-#define PLOY_SYNTAX_ELSE 4
+enum ploy_BuiltinFunc {
+	/* Basic control functions */
+	PLOY_BUILTIN_FUNC_BEGIN,
+	PLOY_BUILTIN_FUNC_IF,
+	//PLOY_BUILTIN_FUNC_COND,
+	//PLOY_BUILTIN_FUNC_TRY,
+	//PLOY_BUILTIN_FUNC_CATCH,
+	//PLOY_BUILTIN_FUNC_TROW,
 
-/* Basic math functions. */
-#define PLOY_BUILTIN_ADD 1
-#define PLOY_BUILTIN_SUB 2
-#define PLOY_BUILTIN_MUL 3
-#define PLOY_BUILTIN_DIV 4
+	/* Basic list functions */
+	PLOY_BUILTIN_FUNC_CAR,
+	PLOY_BUILTIN_FUNC_CDR,
+	PLOY_BUILTIN_FUNC_CONS,
+	//PLOY_BUILTIN_FUNC_MAP,
 
-/* Basic boolean functions. */
-#define PLOY_BUILTIN_EQ 5
-#define PLOY_BUILTIN_NE 6
-#define PLOY_BUILTIN_GT 7
-#define PLOY_BUILTIN_LT 8
-#define PLOY_BUILTIN_GTE 9
-#define PLOY_BUILTIN_LTE 10
-#define PLOY_BUILTIN_AND 11
-#define PLOY_BUILTIN_OR 12
-#define PLOY_BUILTIN_NOT 13
+	/* Basic math functions */
+	PLOY_BUILTIN_FUNC_ADD,
+	PLOY_BUILTIN_FUNC_SUB,
+	//PLOY_BUILTIN_FUNC_MUL,
+	//PLOY_BUILTIN_FUNC_DIV,
 
-/* Advanced math functions. */
-#define PLOY_BUILTIN_SIN 14
-#define PLOY_BUILTIN_COS 15
-#define PLOY_BUILTIN_TAN 16
-#define PLOY_BUILTIN_ASIN 17
-#define PLOY_BUILTIN_ACOS 18
-#define PLOY_BUILTIN_ATAN 19
-#define PLOY_BUILTIN_POW 20
+	/* Basic boolean functions */
+	//PLOY_BUILTIN_FUNC_EQ,
+	//PLOY_BUILTIN_FUNC_NE,
+	//PLOY_BUILTIN_FUNC_GT,
+	//PLOY_BUILTIN_FUNC_LT,
+	//PLOY_BUILTIN_FUNC_GTE,
+	//PLOY_BUILTIN_FUNC_LTE,
+	//PLOY_BUILTIN_FUNC_AND,
+	//PLOY_BUILTIN_FUNC_OR,
+	//PLOY_BUILTIN_FUNC_XOR,
+	//PLOY_BUILTIN_FUNC_NOT,
 
-/* Utility functions. */
-#define PLOY_BUILTIN_PRINT 21
-#define PLOY_BUILTIN_COMPILE 22
-#define PLOY_BUILTIN_EVAL 23
+	/* Advanced math functions */
+	PLOY_BUILTIN_FUNC_SIN,
+	//PLOY_BUILTIN_FUNC_COS,
+	//PLOY_BUILTIN_FUNC_TAN,
+	//PLOY_BUILTIN_FUNC_ASIN,
+	//PLOY_BUILTIN_FUNC_ACOS,
+	//PLOY_BUILTIN_FUNC_ATAN,
+	//PLOY_BUILTIN_FUNC_POW,
+
+	/* Utility functions */
+	PLOY_BUILTIN_FUNC_PRINT,
+	PLOY_BUILTIN_FUNC_COMPILE,
+	PLOY_BUILTIN_FUNC_EVAL,
+};
+
+struct ploy_CallStack {
+	char const* func_name;
+	ploy_CallStack const* next;
+};
+
+PLOY_FUNC void ploy_CallStack_push(
+	ploy_Context* ctx,
+	ploy_CallStack* callstack_top,
+	char const* func_name
+);
+
+struct ploy_ErrorHandler {
+	void* user_data;
+	ploy_ErrorHandler_Handle_fn handle_fn;
+};
+
+PLOY_FUNC ploy_ErrorHandler ploy_ErrorHandler_file(
+	FILE* out
+);
+
+PLOY_FUNC void ploy_throw_error(
+	ploy_Context ctx,
+	ploy_ErrorCode error_code,
+	char const* error_str_fmt,
+	...
+);
 
 struct ploy_Function {
 	void* user_data;
@@ -118,15 +171,8 @@ struct ploy_Value {
 PLOY_FUNC ploy_Value ploy_Value_new(
 );
 
-/**
- * \brief Resolves the given value (which may be an expression or symbol) into an actual value.
- * \param heap Heap to allocate to when evaluating expressions.
- * \param value Value to resolve.
- * \param out_result Value to store the result in.
- * \return An error code, if one occurs.
- */
-PLOY_FUNC ploy_Error ploy_Value_resolve(
-	ploy_Heap* heap,
+PLOY_FUNC ploy_ErrorStatus ploy_Value_resolve(
+	ploy_Context* ctx,
 	ploy_Value value,
 	ploy_Value* out_result
 );
@@ -137,54 +183,40 @@ struct ploy_Heap {
 	size_t offset;
 };
 
-/**
- * \brief Initializes a heap object.
- * \param buffer The buffer to associate with the heap.
- * \param size The size of the given buffer.
- */
 PLOY_FUNC ploy_Heap ploy_Heap_new(
-	void* buffer,
+	void* heap_buffer,
 	size_t size
 );
 
-/**
- * \brief Bookmarks the current location in the given heap, so that it may be restored later.
- * \param heap The heap object to bookmark.
- */
-PLOY_FUNC size_t ploy_Heap_bookmark(
-	ploy_Heap const* heap
-);
-
-/**
- * \brief Restores the heap to the given bookmark.
- * \param heap The heap object to bookmark.
- * \param bookmark The boorkmark to restore to.
- */
-PLOY_FUNC void ploy_Heap_restore(
-	ploy_Heap* heap,
-	size_t bookmark
-);
-
-/**
- * \brief Allocates a default-initialized cell on the given heap.
- * \param heap The heap to allocate from.
- * \return A pointer to the allocated cell.
- */
 PLOY_FUNC ploy_Cell* ploy_Cell_new(
 	ploy_Heap* heap
 );
 
-/**
- * \brief Copies a string onto the ploy heap.
- * \param heap The heap to allocate the string on.
- * \param str The address of the start of the string to copy. This string is not required to be null-terminated.
- * \param len The number of characters in the string to copy.
- * \return The address of the copied (and null-terminated) string.
- */
 PLOY_FUNC char const* ploy_String_copy(
 	ploy_Heap* heap,
 	char const* str,
 	size_t len
+);
+
+struct ploy_Context {
+	ploy_Heap* heap;
+	ploy_CallStack const* callstack;
+	ploy_ErrorHandler error_handler;
+};
+
+PLOY_FUNC void ploy_Context_init(
+	ploy_Context* ctx,
+	ploy_Heap* heap,
+	ploy_ErrorHandler error_handler
+);
+
+PLOY_FUNC ploy_Context_Bookmark ploy_Context_bookmark(
+	ploy_Context const* context
+);
+
+PLOY_FUNC void ploy_Context_restore(
+	ploy_Context* ctx,
+	ploy_Context_Bookmark bookmark
 );
 
 /*
@@ -193,26 +225,26 @@ PLOY_FUNC char const* ploy_String_copy(
  *
  */
 
-PLOY_FUNC ploy_Error ploy_compile_str(
-	ploy_Heap* heap,
+PLOY_FUNC ploy_ErrorStatus ploy_compile_str(
+	ploy_Context ctx,
 	char const* source_str,
 	ploy_Value* out_result
 );
 
-PLOY_FUNC ploy_Error ploy_begin(
-	ploy_Heap* heap,
+PLOY_FUNC ploy_ErrorStatus ploy_begin(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 );
 
-PLOY_FUNC ploy_Error ploy_eval(
-    ploy_Heap* heap,
+PLOY_FUNC ploy_ErrorStatus ploy_eval(
+    ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 );
 
-PLOY_FUNC ploy_Error ploy_invoke(
-	ploy_Heap* heap,
+PLOY_FUNC ploy_ErrorStatus ploy_invoke(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 );
@@ -224,6 +256,8 @@ PLOY_FUNC ploy_Error ploy_invoke(
 #	pragma warning(disable: 4116)
 #endif
 
+#include <math.h>
+
 ploy_Value ploy_Value_new(
 ) {
 	ploy_Value out;
@@ -231,18 +265,18 @@ ploy_Value ploy_Value_new(
 	return out;
 }
 
-ploy_Error ploy_Value_resolve(
-	ploy_Heap* const heap,
+ploy_ErrorStatus ploy_Value_resolve(
+	ploy_Context ctx,
 	ploy_Value value,
 	ploy_Value* const out_result
 ) {
-	ploy_Error error = PLOY_ERROR_NONE;
+	ploy_ErrorStatus error = PLOY_OK;
 	while (!error)
 	{
 		// If the argument is an expression
 		if (value.type == PLOY_VALUE_EXPR)
 		{
-			error = ploy_invoke(heap, value.list, &value);
+			error = ploy_invoke(ctx, value.list, &value);
 		}
 		else
 		{
@@ -255,6 +289,126 @@ ploy_Error ploy_Value_resolve(
 	return error;
 }
 
+void ploy_CallStack_push(
+	ploy_Context* const ctx,
+	ploy_CallStack* const callstack,
+	char const* const func_name
+) {
+	callstack->func_name = func_name;
+	callstack->next = ctx->callstack;
+	ctx->callstack = callstack;
+}
+
+static void ploy_file_error_handler(
+	void* const user_data,
+	ploy_Context const ctx,
+	ploy_ErrorCode const error_code,
+	char const* const error_str_fmt,
+	va_list fmt_args
+) {
+	FILE* const out = (FILE*)user_data;
+
+	char const* error_code_str = NULL;
+	switch ((enum ploy_CoreErrorCode)error_code)
+	{
+	case PLOY_ERROR_CORE_OUT_OF_MEMORY:
+		error_code_str = "PLOY_ERROR_CORE_OUT_OF_MEMORY";
+		break;
+
+	case PLOY_ERROR_CORE_UNEXPECTED_NULL:
+		error_code_str = "PLOY_ERROR_CORE_UNEXPECTED_NULL";
+		break;
+
+	case PLOY_ERROR_CORE_UNEXPECTED_TYPE:
+		error_code_str = "PLOY_ERROR_CORE_UNEXPECTED_TYPE";
+		break;
+
+	case PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS:
+		error_code_str = "PLOY_ERROR_CORE_UNEXPECTED_TYPE";
+		break;
+
+	case PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS:
+		error_code_str = "PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS";
+		break;
+
+	case PLOY_ERROR_CORE_UNEXPECTED_TOKEN:
+		error_code_str = "PLOY_ERROR_CORE_UNEXPECTED_TOKEN";
+		break;
+
+	case PLOY_ERROR_CORE_INVALID_SYNTAX:
+		error_code_str = "PLOY_ERROR_CORE_INVALID_SYNTAX";
+		break;
+
+	default:
+		error_code_str = "USER ERROR CODE";
+		break;
+	}
+
+	// Print out error code, name, and description
+	fprintf(out, "An exception was thrown, error code %d [%s]:\n", error_code, error_code_str);
+	vfprintf(out, error_str_fmt, fmt_args);
+
+	// Print out callstack
+	fprintf(out, "\nCallstack (most recent call first):\n");
+	for (ploy_CallStack const* callstack = ctx.callstack; callstack != NULL; callstack = callstack->next)
+	{
+		fprintf(out, "(%s)\n", callstack->func_name);
+	}
+}
+
+ploy_ErrorHandler ploy_ErrorHandler_file(
+	FILE* const file
+) {
+	ploy_ErrorHandler handler;
+	handler.user_data = file;
+	handler.handle_fn = &ploy_file_error_handler;
+
+	return handler;
+}
+
+void ploy_throw_error(
+	ploy_Context const ctx,
+	ploy_ErrorCode const error_code,
+	char const* const error_str_fmt,
+	...
+) {
+	va_list fmt_args;
+	va_start(fmt_args, error_str_fmt);
+	ctx.error_handler.handle_fn(ctx.error_handler.user_data, ctx, error_code, error_str_fmt, fmt_args);
+	va_end(fmt_args);
+}
+
+void ploy_Context_init(
+	ploy_Context* const ctx,
+	ploy_Heap* const heap,
+	ploy_ErrorHandler const error_handler
+) {
+	ctx->heap = heap;
+	ctx->callstack = NULL;
+	ctx->error_handler = error_handler;
+}
+
+ploy_Context_Bookmark ploy_Context_bookmark(
+	ploy_Context const* const ctx
+) {
+	return ctx->heap->offset;
+}
+
+void ploy_Context_restore(
+	ploy_Context* const ctx,
+	ploy_Context_Bookmark const bookmark
+) {
+	ctx->heap->offset = bookmark;
+}
+
+struct ploy_Cell {
+	ploy_Value value;
+	ploy_Cell const* next;
+};
+
+/* Ploy cells are at least at aligned as a float, and at most as aligned as a pointer. */
+static size_t const PLOY_CELL_ALIGNMENT = sizeof(float) > sizeof(void*) ? sizeof(float) : sizeof(void*);
+
 ploy_Heap ploy_Heap_new(
 	void* const buffer,
 	size_t const size
@@ -266,27 +420,6 @@ ploy_Heap ploy_Heap_new(
 
 	return out;
 }
-
-size_t ploy_Heap_bookmark(
-	ploy_Heap const* const heap
-) {
-	return heap->offset;
-}
-
-void ploy_Heap_restore(
-	ploy_Heap* const heap,
-	size_t const bookmark
-) {
-	heap->offset = bookmark;
-}
-
-struct ploy_Cell {
-	ploy_Value value;
-	ploy_Cell const* next;
-};
-
-/* Ploy cells are at least at aligned as a float, and at most as aligned as a pointer. */
-static size_t const PLOY_CELL_ALIGNMENT = sizeof(float) > sizeof(void*) ? sizeof(float) : sizeof(void*);
 
 ploy_Cell* ploy_Cell_new(
 	ploy_Heap* const heap
@@ -308,7 +441,7 @@ ploy_Cell* ploy_Cell_new(
 }
 
 char const* ploy_String_copy(
-	ploy_Heap* const heap,
+	ploy_Heap* heap,
 	char const* const str,
 	size_t const len
 ) {
@@ -344,75 +477,239 @@ char const* ploy_String_copy(
 
 /*
 *
-* Syntax functions
+* Basic control functions
 *
 */
 
-ploy_Error ploy_begin(
-	ploy_Heap* const heap,
+ploy_ErrorStatus ploy_begin(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* const out_result
 ) {
-	if (!arg_list)
-	{
-		*out_result = ploy_Value_new();
-		return PLOY_ERROR_NONE;
-	}
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "begin");
 
+	*out_result = ploy_Value_new();
 	for (; arg_list != NULL; arg_list = arg_list->next)
 	{
-		ploy_Error const error = ploy_Value_resolve(heap, arg_list->value, out_result);
+		ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, out_result);
 		if (error)
 		{
-			return error;
+			return PLOY_ERROR;
 		}
 	}
 
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
-static ploy_Error ploy_if(
-	ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_if(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
-	ploy_Value* out_result
+	ploy_Value* const out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "if");
+
 	if (!arg_list || !arg_list->next)
 	{
-		return PLOY_ERROR_TOO_FEW_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "if: too few arguments (expected 2-3)");
+		return PLOY_ERROR;
 	}
 	if (arg_list->next->next && arg_list->next->next->next)
 	{
-		return PLOY_ERROR_TOO_MANY_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "if: too many arguments (expected 2-3)");
+		return PLOY_ERROR;
 	}
 
 	// Evaluate the first argument to a boolean
 	ploy_Value predicate;
-	ploy_Error const error = ploy_Value_resolve(heap, arg_list->value, &predicate);
+	ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &predicate);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 	arg_list = arg_list->next;
 
 	if (predicate.type != PLOY_VALUE_BOOL)
 	{
-		return PLOY_ERROR_INVALID_TYPE;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "if: predicate argument was not a boolean");
+		return PLOY_ERROR;
 	}
 
 	if (predicate.i32)
 	{
 		// If the expression is true, run the true branch
-		return ploy_Value_resolve(heap, arg_list->value, out_result);
+		return ploy_Value_resolve(ctx, arg_list->value, out_result);
 	}
 	else if (arg_list->next)
 	{
 		// If a false branch was given, run that
-		return ploy_Value_resolve(heap, arg_list->next->value, out_result);
+		return ploy_Value_resolve(ctx, arg_list->next->value, out_result);
 	}
 
 	// Otherwise, just return default value
 	*out_result = ploy_Value_new();
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
+}
+
+/*
+ *
+ * Basic list functions
+ *
+ */
+
+static ploy_ErrorStatus ploy_car(
+	ploy_Context ctx,
+	ploy_Cell const* const arg_list,
+	ploy_Value* const out_result
+) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "car");
+
+	// Check argument count (only supports 1 argument)
+	if (!arg_list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "car: too few arguments (expected 1, got 0)");
+		return PLOY_ERROR;
+	}
+	if (arg_list->next)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "car: too many arguments (expected 1, got more)");
+		return PLOY_ERROR;
+	}
+
+	// Resolve argument
+	ploy_Value arg;
+	ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &arg);
+	if (error)
+	{
+		return PLOY_ERROR;
+	}
+
+	if (arg.type != PLOY_VALUE_LIST)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "car: argument must be a list");
+		return PLOY_ERROR;
+	}
+
+	// Make sure list isn't empty
+	if (!arg.list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_NULL, "car: received empty list");
+		return PLOY_ERROR;
+	}
+
+	return ploy_Value_resolve(ctx, arg.list->value, out_result);
+}
+
+static ploy_ErrorStatus ploy_cdr(
+	ploy_Context ctx,
+	ploy_Cell const* const arg_list,
+	ploy_Value* const out_result
+) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "cdr");
+
+	// Check argument count (only supports 1 argument)
+	if (!arg_list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "cdr: too few arguments (expected 1, got 0)");
+		return PLOY_ERROR;
+	}
+	if (arg_list->next)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "cdr: too many arguments (expected 1, got more)");
+		return PLOY_ERROR;
+	}
+
+	// Resolve arguments
+	ploy_Value arg;
+	ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &arg);
+	if (error)
+	{
+		return PLOY_ERROR;
+	}
+
+	// Check arg type (must be a list)
+	if (arg.type != PLOY_VALUE_LIST)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "cdr: argument must be a list");
+		return PLOY_ERROR;
+	}
+
+	// Make sure list isn't empty
+	if (!arg.list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_NULL, "cdr: received empty list");
+		return PLOY_ERROR;
+	}
+
+	out_result->type = PLOY_VALUE_LIST;
+	out_result->list = arg.list->next;
+	return PLOY_OK;
+}
+
+static ploy_ErrorStatus ploy_cons(
+	ploy_Context ctx,
+	ploy_Cell const* const arg_list,
+	ploy_Value* const out_result
+) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "cons");
+
+	// Check argument count (only suports 1-2 arguments)
+	if (!arg_list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "cons: too few arguments (expected 2, got 0)");
+		return PLOY_ERROR;
+	}
+	if (arg_list->next && arg_list->next->next)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "cons: too many arguments (expected 2, got more)");
+		return PLOY_ERROR;
+	}
+
+	// Get value for start of list
+	ploy_Value first;
+	ploy_ErrorStatus error = ploy_Value_resolve(ctx, arg_list->value, &first);
+	if (error)
+	{
+		return PLOY_ERROR;
+	}
+
+	// Get value for rest of list
+	ploy_Cell const* list = NULL;
+	if (arg_list->next)
+	{
+		ploy_Value list_val;
+		error = ploy_Value_resolve(ctx, arg_list->next->value, &list_val);
+		if (error)
+		{
+			return PLOY_ERROR;
+		}
+
+		if (list_val.type != PLOY_VALUE_LIST)
+		{
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "cons: second argument must be a list");
+			return PLOY_ERROR;
+		}
+
+		list = list_val.list;
+	}
+
+	// Create list
+	ploy_Cell* const list_start = ploy_Cell_new(ctx.heap);
+	if (!list_start)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_OUT_OF_MEMORY, "cons: failed to allocate Cell");
+		return PLOY_ERROR;
+	}
+	list_start->value = first;
+	list_start->next = list;
+
+	out_result->type = PLOY_VALUE_LIST;
+	out_result->list = list_start;
+	return PLOY_OK;
 }
 
 /*
@@ -421,11 +718,14 @@ static ploy_Error ploy_if(
  *
  */
 
-static ploy_Error ploy_add(
-    ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_add(
+    ploy_Context ctx,
     ploy_Cell const* arg_list,
 	ploy_Value* out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "+");
+
 	out_result->type = PLOY_VALUE_I32;
 	out_result->i32 = 0;
 
@@ -433,10 +733,10 @@ static ploy_Error ploy_add(
 	for (; arg_list != NULL; arg_list = arg_list->next)
 	{
 		ploy_Value value;
-		ploy_Error const error = ploy_Value_resolve(heap, arg_list->value, &value);
+		ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &value);
 		if (error)
 		{
-			return error;
+			return PLOY_ERROR;
 		}
 
 		switch (value.type)
@@ -463,34 +763,40 @@ static ploy_Error ploy_add(
 			break;
 
 		default:
-			return PLOY_ERROR_INVALID_TYPE;
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "+: arguments must be of integral or floating-point type");
+			return PLOY_ERROR;
 		}
 	}
 
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
-static ploy_Error ploy_sub(
-	ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_sub(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "-");
+
 	if (!arg_list)
 	{
-		return PLOY_ERROR_TOO_FEW_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "-: too few arguments (expected at least 1, got 0)");
+		return PLOY_ERROR;
 	}
 
 	ploy_Value value;
-	ploy_Error error = ploy_Value_resolve(heap, arg_list->value, &value);
+	ploy_ErrorStatus error = ploy_Value_resolve(ctx, arg_list->value, &value);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 
 	// Check first argument type
 	if (value.type != PLOY_VALUE_I32 && value.type != PLOY_VALUE_F32)
 	{
-		return PLOY_ERROR_INVALID_TYPE;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "-: arguments must be of integral or floating-point type");
+		return PLOY_ERROR;
 	}
 
 	// If only a single value was given, just negate that
@@ -507,17 +813,17 @@ static ploy_Error ploy_sub(
 			out_result->f32 = -value.f32;
 		}
 
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Do the subtraction
 	for (arg_list = arg_list->next; arg_list != NULL; arg_list = arg_list->next)
 	{
 		// Evaluate expression, if given
-		error = ploy_Value_resolve(heap, arg_list->value, &value);
+		error = ploy_Value_resolve(ctx, arg_list->value, &value);
 		if (error)
 		{
-			return error;
+			return PLOY_ERROR;
 		}
 
 		switch (value.type)
@@ -544,11 +850,66 @@ static ploy_Error ploy_sub(
 			break;
 
 		default:
-			return PLOY_ERROR_INVALID_TYPE;
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "-: arguments must be of integral or floating-point type");
+			return PLOY_ERROR;
 		}
 	}
 
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
+}
+
+/*
+ *
+ * Advanced math functions
+ *
+ */
+
+static ploy_ErrorStatus ploy_sin(
+	ploy_Context ctx,
+	ploy_Cell const* const arg_list,
+	ploy_Value* const out_result
+) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "sin");
+
+	if (!arg_list)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "sin: too few arguments (expected 1, got 0)");
+		return PLOY_ERROR;
+	}
+	if (arg_list->next)
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "sin: too many arguments (expected 1, got more)");
+		return PLOY_ERROR;
+	}
+
+	// Get first argument
+	ploy_Value arg;
+	ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &arg);
+	if (error)
+	{
+		return PLOY_ERROR;
+	}
+
+	// Check type
+	float arg_value = 0.f;
+	if (arg.type == PLOY_VALUE_F32)
+	{
+		arg_value = arg.f32;
+	}
+	else if (arg.type == PLOY_VALUE_I32)
+	{
+		arg_value = (float)arg.i32;
+	}
+	else
+	{
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "sin: argument must be of integral or floating-point type");
+		return PLOY_ERROR;
+	}
+
+	out_result->type = PLOY_VALUE_F32;
+	out_result->f32 = sinf(arg_value);
+	return PLOY_OK;
 }
 
 /*
@@ -557,25 +918,28 @@ static ploy_Error ploy_sub(
  *
  */
 
-static ploy_Error ploy_print(
-	ploy_Heap* heap,
+static ploy_ErrorStatus ploy_print(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* const out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "print");
+
 	for (; arg_list != NULL; arg_list = arg_list->next)
 	{
 		ploy_Value value;
-		ploy_Error const error = ploy_Value_resolve(heap, arg_list->value, &value);
+		ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &value);
 		if (error)
 		{
-			return error;
+			return PLOY_ERROR;
 		}
 
 		switch (value.type)
 		{
 		case PLOY_VALUE_LIST:
 			printf("'( ");
-			ploy_print(heap, value.list, out_result);
+			ploy_print(ctx, value.list, out_result);
 			printf(") ");
 			break;
 
@@ -605,129 +969,152 @@ static ploy_Error ploy_print(
 	}
 
 	*out_result = ploy_Value_new();
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
-static ploy_Error ploy_compile(
-	ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_compile(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* const out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "compile");
+
 	if (!arg_list)
 	{
-		return PLOY_ERROR_TOO_FEW_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "compile: too few arguments (expected 1, got 0)");
+		return PLOY_ERROR;
 	}
 	if (arg_list->next)
 	{
-		return PLOY_ERROR_TOO_MANY_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "compile: too many arguments (expected 1, got more)");
+		return PLOY_ERROR;
 	}
 
 	ploy_Value source;
-	ploy_Error const error = ploy_Value_resolve(heap, arg_list->value, &source);
+	ploy_ErrorStatus const error = ploy_Value_resolve(ctx, arg_list->value, &source);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 
 	if (source.type != PLOY_VALUE_STR)
 	{
-		return PLOY_ERROR_INVALID_TYPE;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "compile: argument must be a string");
+		return PLOY_ERROR;
 	}
 
-	return ploy_compile_str(heap, source.str, out_result);
+	return ploy_compile_str(ctx, source.str, out_result);
 }
 
-ploy_Error ploy_eval(
-	ploy_Heap* const heap,
+ploy_ErrorStatus ploy_eval(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "eval");
+
 	if (!arg_list)
 	{
-		return PLOY_ERROR_TOO_FEW_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_FEW_ARGUMENTS, "eval: too few arguments (expected 1, got 0)");
+		return PLOY_ERROR;
 	}
 	if (arg_list->next)
 	{
-		return PLOY_ERROR_TOO_MANY_ARGUMENTS;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_TOO_MANY_ARGUMENTS, "eval: too many arguments (expected 1, got more)");
+		return PLOY_ERROR;
 	}
 
 	// Evaluate the first argument to a list
 	ploy_Value list;
-	ploy_Error error = ploy_Value_resolve(heap, arg_list->value, &list);
+	ploy_ErrorStatus error = ploy_Value_resolve(ctx, arg_list->value, &list);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 	if (list.type != PLOY_VALUE_LIST)
 	{
-		return PLOY_ERROR_INVALID_TYPE;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "eval: argument must be a list");
+		return PLOY_ERROR;
 	}
 
-	return ploy_invoke(heap, list.list, out_result);
+	return ploy_invoke(ctx, list.list, out_result);
 }
 
-ploy_Error ploy_invoke(
-	ploy_Heap* const heap,
+ploy_ErrorStatus ploy_invoke(
+	ploy_Context ctx,
 	ploy_Cell const* arg_list,
 	ploy_Value* out_result
 ) {
 	if (!arg_list)
 	{
 		*out_result = ploy_Value_new();
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Evaluate the first argument to a procedure-ish thing
 	ploy_Value proc;
-	ploy_Error error = ploy_Value_resolve(heap, arg_list->value, &proc);
+	ploy_ErrorStatus error = ploy_Value_resolve(ctx, arg_list->value, &proc);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 
-	// Procedure thing may be a syntax object, builtin function, or user function
-	if (proc.type == PLOY_VALUE_SYNTAX)
-	{
-		switch (proc.i32)
-		{
-		case PLOY_SYNTAX_BEGIN:
-			return ploy_begin(heap, arg_list->next, out_result);
-
-		case PLOY_SYNTAX_IF:
-			return ploy_if(heap, arg_list->next, out_result);
-		}
-	}
-
+	// Procedure thing may be a builtin function or user function
 	if (proc.type == PLOY_VALUE_FUNCTION_BUILTIN)
 	{
-		switch (proc.i32)
+		switch ((ploy_BuiltinFunc)proc.i32)
 		{
-			/* Basic math functions */
-		case PLOY_BUILTIN_ADD:
-			return ploy_add(heap, arg_list->next, out_result);
+		/* Basic control functions */
+		case PLOY_BUILTIN_FUNC_BEGIN:
+			return ploy_begin(ctx, arg_list->next, out_result);
 
-		case PLOY_BUILTIN_SUB:
-			return ploy_sub(heap, arg_list->next, out_result);
+		case PLOY_BUILTIN_FUNC_IF:
+			return ploy_if(ctx, arg_list->next, out_result);
+
+			/* Basic list functions */
+		case PLOY_BUILTIN_FUNC_CAR:
+			return ploy_car(ctx, arg_list->next, out_result);
+
+		case PLOY_BUILTIN_FUNC_CDR:
+			return ploy_cdr(ctx, arg_list->next, out_result);
+
+		case PLOY_BUILTIN_FUNC_CONS:
+			return ploy_cons(ctx, arg_list->next, out_result);
+
+			/* Basic math functions */
+		case PLOY_BUILTIN_FUNC_ADD:
+			return ploy_add(ctx, arg_list->next, out_result);
+
+		case PLOY_BUILTIN_FUNC_SUB:
+			return ploy_sub(ctx, arg_list->next, out_result);
+
+			/* Advanced math functions */
+		case PLOY_BUILTIN_FUNC_SIN:
+			return ploy_sin(ctx, arg_list->next, out_result);
 
 			/* Utility functions */
-		case PLOY_BUILTIN_PRINT:
-			return ploy_print(heap, arg_list->next, out_result);
+		case PLOY_BUILTIN_FUNC_PRINT:
+			return ploy_print(ctx, arg_list->next, out_result);
 
-		case PLOY_BUILTIN_COMPILE:
-			return ploy_compile(heap, arg_list->next, out_result);
+		case PLOY_BUILTIN_FUNC_COMPILE:
+			return ploy_compile(ctx, arg_list->next, out_result);
 
-		case PLOY_BUILTIN_EVAL:
-			return ploy_eval(heap, arg_list->next, out_result);
+		case PLOY_BUILTIN_FUNC_EVAL:
+			return ploy_eval(ctx, arg_list->next, out_result);
 		}
 	}
 
 	if (proc.type == PLOY_VALUE_FUNCTION_USER)
 	{
-		// TODO: This should resolve remaining arguments first
-		return proc.function->invoke_fn(proc.function->user_data, heap, arg_list->next, out_result);
+		return proc.function->invoke_fn(proc.function->user_data, ctx, arg_list->next, out_result);
 	}
 
-	return PLOY_ERROR_INVALID_TYPE;
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "invoke");
+	ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TYPE, "invoke: given function object was not a function type. Type code %d", proc.type);
+	return PLOY_ERROR;
 }
 
 /*
@@ -764,7 +1151,8 @@ static int ploy_is_symbol_char(
 		|| c == '~' || c == '!' || c == '$' || c == '%' || c == '^' || c == '&' || c == '*' || c == '-' || c == '_' || c == '=' || c == '+' || c == ':' || c == '<' || c == '.' || c == '>' || c == '/' || c == '?';
 }
 
-static ploy_Error ploy_next_token(
+static ploy_ErrorStatus ploy_next_token(
+	ploy_Context ctx,
 	char const** const io_source_str,
 	size_t* out_token_len,
 	ploy_TokenType* out_token_type
@@ -780,7 +1168,7 @@ static ploy_Error ploy_next_token(
 	{
 		*out_token_len = 0;
 		*out_token_type = PLOY_TOKEN_NONE;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Check for begin
@@ -788,7 +1176,7 @@ static ploy_Error ploy_next_token(
 	{
 		*out_token_len = 1;
 		*out_token_type = PLOY_TOKEN_BEGIN;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Check for end
@@ -796,15 +1184,15 @@ static ploy_Error ploy_next_token(
 	{
 		*out_token_len = 1;
 		*out_token_type = PLOY_TOKEN_END;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Check for quote
 	if (*source_str == '\'')
 	{
 		*out_token_len = 1;
-		*out_token_len = PLOY_TOKEN_QUOTE;
-		return PLOY_ERROR_NONE;
+		*out_token_type = PLOY_TOKEN_QUOTE;
+		return PLOY_OK;
 	}
 
 	// Check for numbers
@@ -824,12 +1212,12 @@ static ploy_Error ploy_next_token(
 		{
 			token_end += 1;
 
-			// Decimal point must be followed by at least one more digit
 			if (!isdigit(*token_end))
 			{
 				*out_token_len = 0;
 				*out_token_type = PLOY_TOKEN_NONE;
-				return PLOY_ERROR_INVALID_SYNTAX;
+				ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "A decimal point must be followed by at least one digit");
+				return PLOY_ERROR;
 			}
 
 			// Skip remaining digits
@@ -841,16 +1229,16 @@ static ploy_Error ploy_next_token(
 			*out_token_type = PLOY_TOKEN_F32;
 		}
 
-		// Only whitespace, opening parenthesis, closing parenthesis, or the null terminator may follow a number
 		if (!isspace(*token_end) && *token_end != '(' && *token_end != ')' && *token_end != 0)
 		{
 			*out_token_len = 0;
 			*out_token_type = PLOY_TOKEN_NONE;
-			return PLOY_ERROR_INVALID_SYNTAX;
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "Only whitespace, '(', ')', or EOF may follow a digit");
+			return PLOY_ERROR;
 		}
 
 		*out_token_len = token_end - source_str;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Check for string
@@ -877,12 +1265,13 @@ static ploy_Error ploy_next_token(
 		{
 			*out_token_len = 0;
 			*out_token_type = PLOY_TOKEN_NONE;
-			return PLOY_ERROR_INVALID_SYNTAX;
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "EOF reached before closing parenthesis");
+			return PLOY_ERROR;
 		}
 
 		*out_token_len = token_end - source_str + 1;
 		*out_token_type = PLOY_TOKEN_STRING;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// Must be a symbol (don't need to check for invalid starting characters, since those have already been covered in previous cases)
@@ -896,104 +1285,124 @@ static ploy_Error ploy_next_token(
 
 		*out_token_len = token_end - source_str;
 		*out_token_type = PLOY_TOKEN_SYMBOL;
-		return PLOY_ERROR_NONE;
+		return PLOY_OK;
 	}
 
 	// An error must have happened somewhere
 	*out_token_len = 0;
 	*out_token_type = PLOY_TOKEN_NONE;
-	return PLOY_ERROR_INVALID_SYNTAX;
+	ploy_throw_error(ctx, PLOY_ERROR_CORE_INVALID_SYNTAX, "An unknown parsing error occurred");
+	return PLOY_ERROR;
 }
 
-static ploy_Error ploy_parse_symbol(
-	ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_parse_symbol(
+	ploy_Context ctx,
 	char const* const symbol_str,
 	size_t const symbol_len,
 	ploy_Value* const out_result
 ) {
-	// Check syntax identifiers
-	out_result->type = PLOY_VALUE_SYNTAX;
+	// Check builtin functions
+	out_result->type = PLOY_VALUE_FUNCTION_BUILTIN;
+
+	/* Basic control functions */
 	if (symbol_len == 5 && !strncmp(symbol_str, "begin", 5))
 	{
-		out_result->i32 = PLOY_SYNTAX_BEGIN;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_BEGIN;
+		return PLOY_OK;
 	}
 	if (symbol_len == 2 && !strncmp(symbol_str, "if", 2))
 	{
-		out_result->i32 = PLOY_SYNTAX_IF;
-		return PLOY_ERROR_NONE;
-	}
-	if (symbol_len == 4 && !strncmp(symbol_str, "cond", 4))
-	{
-		out_result->i32 = PLOY_SYNTAX_COND;
-		return PLOY_ERROR_NONE;
-	}
-	if (symbol_len == 4 && !strncmp(symbol_str, "else", 4))
-	{
-		out_result->i32 = PLOY_SYNTAX_ELSE;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_IF;
+		return PLOY_OK;
 	}
 
-	// Check builtin functions
-	out_result->type = PLOY_VALUE_FUNCTION_BUILTIN;
+	/* Basic list functions */
+	if (symbol_len == 3 && !strncmp(symbol_str, "car", 3))
+	{
+		out_result->i32 = PLOY_BUILTIN_FUNC_CAR;
+		return PLOY_OK;
+	}
+	if (symbol_len == 3 && !strncmp(symbol_str, "cdr", 3))
+	{
+		out_result->i32 = PLOY_BUILTIN_FUNC_CDR;
+		return PLOY_OK;
+	}
+	if (symbol_len == 4 && !strncmp(symbol_str, "cons", 4))
+	{
+		out_result->i32 = PLOY_BUILTIN_FUNC_CONS;
+		return PLOY_OK;
+	}
+
+	/* Basic math functions */
 	if (symbol_len == 1 && *symbol_str == '+')
 	{
-		out_result->i32 = PLOY_BUILTIN_ADD;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_ADD;
+		return PLOY_OK;
 	}
 	if (symbol_len == 1 && *symbol_str == '-')
 	{
-		out_result->i32 = PLOY_BUILTIN_SUB;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_SUB;
+		return PLOY_OK;
 	}
+
+	/* Advanced math functions */
+	if (symbol_len == 3 && !strncmp(symbol_str, "sin", 3))
+	{
+		out_result->i32 = PLOY_BUILTIN_FUNC_SIN;
+		return PLOY_OK;
+	}
+
+	/* Utility functions */
 	if (symbol_len == 5 && !strncmp(symbol_str, "print", 5))
 	{
-		out_result->i32 = PLOY_BUILTIN_PRINT;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_PRINT;
+		return PLOY_OK;
 	}
 	if (symbol_len == 7 && !strncmp(symbol_str, "compile", 7))
 	{
-		out_result->i32 = PLOY_BUILTIN_COMPILE;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_COMPILE;
+		return PLOY_OK;
 	}
 	if (symbol_len == 4 && !strncmp(symbol_str, "eval", 4))
 	{
-		out_result->i32 = PLOY_BUILTIN_EVAL;
-		return PLOY_ERROR_NONE;
+		out_result->i32 = PLOY_BUILTIN_FUNC_EVAL;
+		return PLOY_OK;
 	}
 
 	// Must be a user symbol, copy the string
 	out_result->type = PLOY_VALUE_SYMBOL;
-	out_result->str = ploy_String_copy(heap, symbol_str, symbol_len);
+	out_result->str = ploy_String_copy(ctx.heap, symbol_str, symbol_len);
 	if (!out_result->str)
 	{
-		return PLOY_ERROR_OUT_OF_MEMORY;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_OUT_OF_MEMORY, "compile_str: failed to allocate string");
+		return PLOY_ERROR;
 	}
 
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
-static ploy_Error ploy_compile_recursive(
-	ploy_Heap* const heap,
+static ploy_ErrorStatus ploy_compile_recursive(
+	ploy_Context ctx,
 	char const** io_source_str,
 	size_t* out_token_len,
 	ploy_TokenType* out_token_type,
 	ploy_Cell const** out_list
 ) {
 	// Get the next token
-	ploy_Error error = ploy_next_token(io_source_str, out_token_len, out_token_type);
+	ploy_ErrorStatus error = ploy_next_token(ctx, io_source_str, out_token_len, out_token_type);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 
 	while (*out_token_type != PLOY_TOKEN_NONE && *out_token_type != PLOY_TOKEN_END)
 	{
 		// Allocate a new cell for whatever we're looking at
-		ploy_Cell* const cell = ploy_Cell_new(heap);
+		ploy_Cell* const cell = ploy_Cell_new(ctx.heap);
 		if (!cell)
 		{
-			return PLOY_ERROR_OUT_OF_MEMORY;
+			ploy_throw_error(ctx, PLOY_ERROR_CORE_OUT_OF_MEMORY, "compile_str: failed to allocate Cell");
+			return PLOY_ERROR;
 		}
 
 		*out_list = cell;
@@ -1015,120 +1424,126 @@ static ploy_Error ploy_compile_recursive(
 
 		case PLOY_TOKEN_STRING:
 			cell->value.type = PLOY_VALUE_STR;
-			cell->value.str = ploy_String_copy(heap, *io_source_str + 1, *out_token_len - 2);
+			cell->value.str = ploy_String_copy(ctx.heap, *io_source_str + 1, *out_token_len - 2);
 			*io_source_str += *out_token_len;
 
 			// Make sure the string was sucessfully allocated
 			if (!cell->value.str)
 			{
-				return PLOY_ERROR_OUT_OF_MEMORY;
+				ploy_throw_error(ctx, PLOY_ERROR_CORE_OUT_OF_MEMORY, "compile_str: failed to allocate string");
+				return PLOY_ERROR;
 			}
 			break;
 
 		case PLOY_TOKEN_BEGIN:
 			*io_source_str += *out_token_len;
 			cell->value.type = PLOY_VALUE_EXPR;
-			error = ploy_compile_recursive(heap, io_source_str, out_token_len, out_token_type, &cell->value.list);
+			error = ploy_compile_recursive(ctx, io_source_str, out_token_len, out_token_type, &cell->value.list);
 			*io_source_str += *out_token_len;
 
 			if (error)
 			{
-				return error;
+				return PLOY_ERROR;
 			}
 
 			// A 'begin' token MUST be ulitmately terminated by an 'end' token
 			if (*out_token_type != PLOY_TOKEN_END)
 			{
-				return PLOY_ERROR_INVALID_SYNTAX;
+				ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TOKEN, "compile_str: expected ')' token. Got token code %d", *out_token_type);
+				return PLOY_ERROR;
 			}
 			break;
 
 		case PLOY_TOKEN_QUOTE:
 			// Get the next token
 			*io_source_str += *out_token_len;
-			error = ploy_next_token(io_source_str, out_token_len, out_token_type);
+			error = ploy_next_token(ctx, io_source_str, out_token_len, out_token_type);
 			if (error)
 			{
-				return error;
+				return PLOY_ERROR;
 			}
 
 			if (*out_token_type == PLOY_TOKEN_SYMBOL)
 			{
 				cell->value.type = PLOY_VALUE_QSYMBOL;
-				cell->value.str = ploy_String_copy(heap, *io_source_str, *out_token_len);
+				cell->value.str = ploy_String_copy(ctx.heap, *io_source_str, *out_token_len);
 				*io_source_str += *out_token_len;
 
 				// Make sure the string was successfully allocated
 				if (!cell->value.str)
 				{
-					return PLOY_ERROR_OUT_OF_MEMORY;
+					ploy_throw_error(ctx, PLOY_ERROR_CORE_OUT_OF_MEMORY, "compile_str: failed to allocate string");
+					return PLOY_ERROR;
 				}
 			}
 			else if (*out_token_type == PLOY_TOKEN_BEGIN)
 			{
 				*io_source_str += *out_token_len;
 				cell->value.type = PLOY_VALUE_LIST;
-				error = ploy_compile_recursive(heap, io_source_str, out_token_len, out_token_type, &cell->value.list);
+				error = ploy_compile_recursive(ctx, io_source_str, out_token_len, out_token_type, &cell->value.list);
 				if (error)
 				{
-					return error;
+					return PLOY_ERROR;
 				}
 
 				// Make sure the begin was matched with an end
 				if (*out_token_type != PLOY_TOKEN_END)
 				{
-					return PLOY_ERROR_INVALID_SYNTAX;
+					ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TOKEN, "compile_str: expected ')' token. Got token code %d", *out_token_type);
+					return PLOY_ERROR;
 				}
+				*io_source_str += *out_token_len;
 			}
 			break;
 
 		case PLOY_TOKEN_SYMBOL:
-			error = ploy_parse_symbol(heap, *io_source_str, *out_token_len, &cell->value);
+			error = ploy_parse_symbol(ctx, *io_source_str, *out_token_len, &cell->value);
 			*io_source_str += *out_token_len;
 			if (error)
 			{
-				return error;
+				return PLOY_ERROR;
 			}
 			break;
-
-		default:
-			return PLOY_ERROR_UNKNOWN;
 		}
 
-		error = ploy_next_token(io_source_str, out_token_len, out_token_type);
+		error = ploy_next_token(ctx, io_source_str, out_token_len, out_token_type);
 		if (error)
 		{
-			return error;
+			return PLOY_ERROR;
 		}
 	}
 
 	*out_list = NULL;
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
-ploy_Error ploy_compile_str(
-	ploy_Heap* const heap,
+ploy_ErrorStatus ploy_compile_str(
+	ploy_Context ctx,
 	char const* source_str,
 	ploy_Value* const out_result
 ) {
+	ploy_CallStack callstack;
+	ploy_CallStack_push(&ctx, &callstack, "compile_str");
+
 	out_result->type = PLOY_VALUE_LIST;
 	size_t token_len;
 	ploy_TokenType token_type;
 
 	// Recursively compile the string
-	ploy_Error const error = ploy_compile_recursive(heap, &source_str, &token_len, &token_type, &out_result->list);
+	ploy_ErrorStatus const error = ploy_compile_recursive(ctx, &source_str, &token_len, &token_type, &out_result->list);
 	if (error)
 	{
-		return error;
+		return PLOY_ERROR;
 	}
 
 	// Last token must have been NONE
 	if (token_type != PLOY_TOKEN_NONE)
 	{
-		return PLOY_ERROR_INVALID_SYNTAX;
+		ploy_throw_error(ctx, PLOY_ERROR_CORE_UNEXPECTED_TOKEN, "compile_str: expected EOF. Got token code %d", token_type);
+		return PLOY_ERROR;
 	}
 
-	return PLOY_ERROR_NONE;
+	return PLOY_OK;
 }
 
 #endif
