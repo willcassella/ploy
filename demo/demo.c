@@ -5,22 +5,48 @@
 
 int main()
 {
-	char buffer[370];
+	char buffer[4096];
 	ploy_Heap heap = ploy_Heap_new(buffer, sizeof(buffer));
 	ploy_ErrorHandler error_handler = ploy_ErrorHandler_file(stdout);
 	ploy_Context ctx;
 	ploy_Context_init(&ctx, &heap, error_handler);
+	ploy_Context_Bookmark const bookmark = ploy_Context_bookmark(&ctx);
 
-	char const* source = "(print (cons 1 (cons 2 (cons 3 (cons 4 '())))))";
-	ploy_Value code;
-	ploy_ErrorStatus const error = ploy_compile_str(ctx, source, &code);
-	if (error)
+	printf("Welcome to the ploy REPL");
+	while (1)
 	{
-		getchar();
-		return;
-	}
+		// Reset heap
+		ploy_Context_restore(&ctx, bookmark);
 
-	ploy_Value result;
-	ploy_begin(ctx, code.list, &result);
-	getchar();
+		printf("\n> ");
+
+		char source_code[1024];
+		fgets(source_code, sizeof(source_code), stdin);
+
+		// Compile code
+		ploy_Value compiled_code;
+		ploy_ErrorStatus error = ploy_compile_str(ctx, source_code, &compiled_code);
+		if (error)
+		{
+			continue;
+		}
+
+		// Run code
+		ploy_Value result;
+		error = ploy_begin(ctx, compiled_code.list, &result);
+		if (error)
+		{
+			continue;
+		}
+
+		ploy_Cell* const cell = ploy_Cell_new(ctx.heap);
+		if (!cell)
+		{
+			continue;
+		}
+		cell->value = result;
+
+		ploy_Value print_result;
+		ploy_print(ctx, cell, &print_result);
+	}
 }
