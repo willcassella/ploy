@@ -965,6 +965,68 @@ static ploy_ErrorStatus ploy_print(
 		case PLOY_VALUE_STR:
 			printf("\"%s\" ", value.str);
 			break;
+
+		case PLOY_VALUE_QSYMBOL:
+			printf("'%s ", value.str);
+			break;
+
+		case PLOY_VALUE_FUNCTION_USER:
+			printf("<function at %p> ", value.function);
+			break;
+
+		case PLOY_VALUE_FUNCTION_BUILTIN:
+			switch ((ploy_BuiltinFunc)value.i32)
+			{
+			case PLOY_BUILTIN_FUNC_BEGIN:
+				printf("<function begin> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_IF:
+				printf("<function if> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_CAR:
+				printf("<function car> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_CDR:
+				printf("<function cdr> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_CONS:
+				printf("<function cons> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_ADD:
+				printf("<function +> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_SUB:
+				printf("<function -> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_SIN:
+				printf("<function sin> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_PRINT:
+				printf("<function print> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_COMPILE:
+				printf("<function compile> ");
+				break;
+
+			case PLOY_BUILTIN_FUNC_EVAL:
+				printf("<function eval> ");
+				break;
+			}
+			break;
+
+		case PLOY_VALUE_EXPR:
+		case PLOY_VALUE_SYMBOL:
+			// Code will never be reached, since these cases are handled in 'ploy_Value_resolve'
+			break;
 		}
 	}
 
@@ -1196,7 +1258,7 @@ static ploy_ErrorStatus ploy_next_token(
 	}
 
 	// Check for numbers
-	if (isdigit(*source_str) || (*source_str == '+' || *source_str == '-' || *source_str == '.') && isdigit(source_str[1]))
+	if (isdigit(*source_str) || ((*source_str == '+' || *source_str == '-' || *source_str == '.') && isdigit(source_str[1])))
 	{
 		*out_token_type = PLOY_TOKEN_I32;
 
@@ -1503,6 +1565,11 @@ static ploy_ErrorStatus ploy_compile_recursive(
 			{
 				return PLOY_ERROR;
 			}
+			break;
+
+		case PLOY_TOKEN_END:
+		case PLOY_TOKEN_NONE:
+			// These cases should never be reached since, they are handled in 'while' condition
 			break;
 		}
 
