@@ -273,7 +273,7 @@ PLOY_FUNC ploy_ExceptionStatus ploy_invoke(
 #include <math.h>
 
 char const* ploy_ErrorCode_get_name(
-	enum ploy_CoreErrorCode const error
+	ploy_ErrorCode const error
 ) {
 	switch (error)
 	{
