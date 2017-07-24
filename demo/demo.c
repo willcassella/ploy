@@ -7,7 +7,7 @@ int main()
 {
 	char buffer[4096];
 	ploy_Heap heap = ploy_Heap_new(buffer, sizeof(buffer));
-	ploy_ErrorHandler error_handler = ploy_ErrorHandler_file(stdout);
+	ploy_ExceptionHandler error_handler = ploy_ExceptionHandler_file(stdout);
 	ploy_Context ctx;
 	ploy_Context_init(&ctx, &heap, error_handler);
 	ploy_Context_Bookmark const bookmark = ploy_Context_bookmark(&ctx);
@@ -25,7 +25,7 @@ int main()
 
 		// Compile code
 		ploy_Value compiled_code;
-		ploy_ErrorStatus error = ploy_compile_str(ctx, source_code, &compiled_code);
+		ploy_ExceptionStatus error = ploy_compile_str(ctx, source_code, &compiled_code);
 		if (error)
 		{
 			continue;
